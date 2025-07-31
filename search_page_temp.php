@@ -6,7 +6,6 @@
     if(!isset($user_id)){
         header('location:login.php');
     };
-
     if(isset($_POST['add_to_wishlist'])){
         $pid = $_POST['pid'];
         $pid = filter_var($pid, FILTER_SANITIZE_STRING);
@@ -47,34 +46,23 @@
         $p_qty = $_POST['p_qty'];
         $p_qty = filter_var($p_qty, FILTER_SANITIZE_STRING);
 
-        // Get available stock from the database
-        $select_stock = $conn->prepare("SELECT stock FROM `products` WHERE id = ?");
-        $select_stock->execute([$pid]);
-        $fetch_stock = $select_stock->fetch(PDO::FETCH_ASSOC);
-        $stock = $fetch_stock['stock'];
+        $check_cart_numbers = $conn->prepare("SELECT * FROM `cart` WHERE name = ? AND user_id = ?");
+        $check_cart_numbers->execute([$p_name, $user_id]);
 
-        // Check if the quantity is greater than available stock
-        if($p_qty > $stock){
-            $message[] = 'Quantity exceeds available stock!';
-        } else {
-            $check_cart_numbers = $conn->prepare("SELECT * FROM `cart` WHERE name = ? AND user_id = ?");
-            $check_cart_numbers->execute([$p_name, $user_id]);
+        if($check_cart_numbers->rowCount() > 0){
+            $message[] = 'already added to cart!';
+        }
+        else{
+            $check_wishlist_numbers = $conn->prepare("DELETE FROM `wishlist` WHERE name = ? AND user_id = ?");
+            $check_wishlist_numbers->execute([$p_name, $user_id]);
 
-            if($check_cart_numbers->rowCount() > 0){
-                $message[] = 'already added to cart!';
+            if($check_wishlist_numbers->rowCount() > 0){
+                $delete_wishlist_ = $conn->prepare("SELECT * FROM `wishlist` WHERE name = ? AND user_id = ?");
+                $delete_wishlist_->execute([$p_name, $user_id]);
             }
-            else{
-                $check_wishlist_numbers = $conn->prepare("DELETE FROM `wishlist` WHERE name = ? AND user_id = ?");
-                $check_wishlist_numbers->execute([$p_name, $user_id]);
-
-                if($check_wishlist_numbers->rowCount() > 0){
-                    $delete_wishlist_ = $conn->prepare("SELECT * FROM `wishlist` WHERE name = ? AND user_id = ?");
-                    $delete_wishlist_->execute([$p_name, $user_id]);
-                }
-                $insert_cart = $conn->prepare("INSERT INTO `cart`(user_id, pid, name, price, quantity, image) VALUES(?,?,?,?,?,?)");
-                $insert_cart->execute([$user_id, $pid, $p_name, $p_price, $p_qty, $p_image]);
-                $message[] = 'added to cart!';
-            }
+            $insert_cart = $conn->prepare("INSERT INTO `cart`(user_id, pid, name, price, quantity, image) VALUES(?,?,?,?,?,?)");
+            $insert_cart->execute([$user_id, $pid, $p_name, $p_price,$p_qty, $p_image]);
+            $message[] = 'added to cart!';
         }
     }
 ?>
@@ -89,64 +77,6 @@
         <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.1.1/css/all.min.css">
         <link rel="stylesheet" href="css/style.css"> 
     </head>
-    <style>
-        /* Stock container styling */
-        .stock {
-            font-size: 16px;
-            padding: 10px;
-            margin: 15px 0;
-            border-radius: 8px;
-            display: inline-block;
-            text-align: center;
-            font-family: Arial, sans-serif;
-            font-weight: bold;
-            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
-            transition: all 0.3s ease-in-out;
-        }
-
-        /* In-stock styling */
-        .stock.in-stock {
-            color: #fff;
-            background-color: #28a745; /* Green background for available stock */
-            border: 1px solid #28a745;
-        }
-
-        /* Out-of-stock styling */
-        .stock.out-of-stock {
-            color: #fff;
-            background-color: #e74c3c; /* Red background for out-of-stock */
-            border: 1px solid #e74c3c;
-        }
-
-        /* Hover effect */
-        .stock:hover {
-            transform: scale(1.05);
-            opacity: 0.9;
-        }
-
-        /* Subtle animation for when stock updates dynamically */
-        @keyframes stock-update {
-            0% {
-                opacity: 0.5;
-                transform: scale(0.95);
-            }
-            100% {
-                opacity: 1;
-                transform: scale(1);
-            }
-        }
-
-        .stock {
-            animation: stock-update 0.5s ease-in-out;
-        }
-
-        /* Additional styles for the product card */
-        .box .stock {
-            margin-top: 10px;
-            font-size: 14px;
-        }
-
-    </style>
     <body>
         <?php
             include 'header.php';
@@ -161,45 +91,38 @@
             if(isset($_POST['search_btn'])){
                 $search_box = $_POST['search_box'];
                 $search_box = filter_var($search_box, FILTER_SANITIZE_STRING);
+            
         ?>
         <section class="products" style="padding-top: 0;">
             <h1 class="title">latest products</h1>
             <div class="box-container">
                 
                 <?php
+                    
                     $select_products = $conn->prepare("SELECT * FROM `products` WHERE name LIKE '%{$search_box}%' OR catagory LIKE '%{$search_box}%'");
                     $select_products->execute();
-                    if($select_products->rowCount() > 0){
+                    if($select_products-> rowCount() > 0){
                         while($fetch_products = $select_products->fetch(PDO::FETCH_ASSOC)){
-                            $stock = $fetch_products['stock']; // Get the available stock
+                            
+                       
                 ?>
      
                 <form action="" class="box" method="POST">
                     <div class="price"><span><?= $fetch_products['price']; ?></span>/-</div>
                     <a href="view_page.php?pid=<?= $fetch_products['id']; ?>" class="fas fa-eye"></a>
                     <img src="uploaded_img/<?=$fetch_products['image'];?>" alt="">
-
-                    <!-- Display product name -->
                     <div class="name"><?= $fetch_products['name']; ?></div>
-
-                    <!-- Display available stock -->
-                    <div class="stock">Available Stock: <?= $stock > 0 ? $stock : 'Out of stock'; ?></div>
-
                     <input type="hidden" name="pid" value="<?= $fetch_products['id']; ?>">
                     <input type="hidden" name="p_name" value="<?= $fetch_products['name']; ?>">
                     <input type="hidden" name="p_price" value="<?= $fetch_products['price']; ?>">
                     <input type="hidden" name="p_image" value="<?= $fetch_products['image']; ?>">
-
-                    <!-- Max quantity is limited to the available stock -->
-                    <input type="number" min="1" max="<?= $stock ?>" value="1" name="p_qty" class="qty" <?= $stock == 0 ? 'disabled' : ''; ?>>
-                    
-                    <!-- Disable buttons if out of stock -->
-                    <input type="submit" value="add to wishlist" class="option-btn" name="add_to_wishlist" <?= $stock == 0 ? 'disabled' : ''; ?>>
-                    <input type="submit" value="add to cart" class="btn" name="add_to_cart" <?= $stock == 0 ? 'disabled' : ''; ?>>
+                    <input type="number" min="1" value="1" name="p_qty" class="qty">
+                    <input type="submit" value="add to wishlist" class="option-btn" name="add_to_wishlist">
+                    <input type="submit" value="add to cart" class="btn" name="add_to_cart">
                 </form>
                 <?php
                      }
-                    } else {
+                    }else{
                         echo '<p class="empty">no result found!</p>';
                     }
                 ?>
@@ -212,6 +135,8 @@
             include 'footer.php';
         ?>
 
+
+
         <script src="js/script.js"></script>
     </body>
-</html>
+</html>  

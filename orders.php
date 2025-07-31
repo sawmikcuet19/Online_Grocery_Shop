@@ -13,8 +13,8 @@
     <head>
         <meta charset="UTF-8">
         <meta http-equiv="X-UA-Compatible" content="IE=edge">
-        <meta name="viewport" content="width=device-width", initial-scale=1.0>
-        <title>orders</title>
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>Orders</title>
         <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.1.1/css/all.min.css">
         <link rel="stylesheet" href="css/style.css"> 
     </head>
@@ -23,7 +23,7 @@
             include 'header.php';
         ?>
         <section class="placed-orders">
-            <h1 class="title">placed orders</h1>
+            <h1 class="title">Placed Orders</h1>
             
             <div class="box-container">
 
@@ -33,22 +33,34 @@
                     if($select_orders->rowCount() > 0){
                         while($fetch_orders = $select_orders->fetch(PDO::FETCH_ASSOC)){
 
+                            // Fetch the location for the current order
+                            $select_location = $conn->prepare("SELECT location FROM `location` WHERE oid = ?");
+                            $select_location->execute([$fetch_orders['id']]);
+                            $fetch_location = $select_location->fetch(PDO::FETCH_ASSOC);
+                            $location = $fetch_location ? $fetch_location['location'] : 'None';
+
                 ?>
                 <div class="box">
-                    <p>placed on : <span><?= $fetch_orders['placed_on']; ?></span></p>
-                    <p>name : <span><?= $fetch_orders['name']; ?></span></p>
-                    <p>number : <span><?= $fetch_orders['number']; ?></span></p>
-                    <p>email : <span><?= $fetch_orders['email']; ?></span></p>
-                    <p>address : <span><?= $fetch_orders['address']; ?></span></p>
-                    <p>payment method : <span><?= $fetch_orders['method']; ?></span></p>
-                    <p>your order : <span><?= $fetch_orders['total_products']; ?></span></p>
-                    <p>total price : <span><?= $fetch_orders['total_price']; ?>/-</span></p>
-                    <p>payment status : <span style="color:<?php if($fetch_orders['payment_status'] == 'pending'){echo 'red'; }else{echo 'green';} ?>"><?= $fetch_orders['payment_status']; ?></span></p>
+                    <p>Placed on: <span><?= $fetch_orders['placed_on']; ?></span></p>
+                    <p>Name: <span><?= $fetch_orders['name']; ?></span></p>
+                    <p>Number: <span><?= $fetch_orders['number']; ?></span></p>
+                    <p>Email: <span><?= $fetch_orders['email']; ?></span></p>
+                    <p>Address: <span><?= $fetch_orders['address']; ?></span></p>
+                    <p>Payment method: <span><?= $fetch_orders['method']; ?></span></p>
+                    <p>Your order: <span><?= $fetch_orders['total_products']; ?></span></p>
+                    <p>Total price: <span><?= $fetch_orders['total_price']; ?>/-</span></p>
+                    <p>Status: 
+                        <span style="color:<?php echo ($fetch_orders['payment_status'] == 'pending') ? 'red' : (($fetch_orders['payment_status'] == 'completed') ? 'darkgreen' : ''); ?>">
+                            <?= in_array($fetch_orders['payment_status'], ['pending', 'completed']) ? $fetch_orders['payment_status'] : ''; ?>
+                        </span>
+                    </p>
+                    <p>Package Location: <span><?= $location; ?></span></p> <!-- Show location or "None" -->
+
                 </div>
                 <?php
                         }
-                    }else{
-                        echo '<p class="empty">no orders placed yet!</p>';
+                    } else {
+                        echo '<p class="empty">No orders placed yet!</p>';
                     }
                 ?>
             </div>
@@ -57,8 +69,6 @@
             include 'footer.php';
         ?>
 
-
-
         <script src="js/script.js"></script>
     </body>
-</html>  
+</html>

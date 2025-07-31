@@ -57,27 +57,24 @@
                         $select_orders = $conn->prepare("SELECT * FROM `orders` WHERE payment_status != 'Cancelled'");
                         $select_orders->execute();
                         $number_of_orders = $select_orders->rowCount();
+                        
                     ?>
                     <h3><?= $number_of_orders; ?></h3>
-                    <p>Orders Placed</p>
-                    <!-- Modify the link to pass the status filter in the URL -->
-                    <a href="admin_orders_not_cancelled.php?status!=Cancelled" class="btn">See Orders</a>
+                    <p>order placed</p>
+                    <a href="admin_orders.php" class="btn">see orders</a>
                 </div>
-
 
                 <div class="box">
                     <?php
-                        // Fetch orders where payment_status is 'Cancelled'
                         $select_orders = $conn->prepare("SELECT * FROM `orders` WHERE payment_status = 'Cancelled'");
                         $select_orders->execute();
                         $number_of_orders = $select_orders->rowCount();
+                        
                     ?>
                     <h3><?= $number_of_orders; ?></h3>
-                    <p>Cancelled Orders</p>
-                    <!-- Link to admin_orders.php with 'status' query parameter set to 'Cancelled' -->
-                    <a href="admin_orders_cancelled.php?status=Cancelled" class="btn">Cancelled Orders</a>
+                    <p>Cancelled order</p>
+                    <a href="admin_orders.php" class="btn">cancelled orders</a>
                 </div>
-
 
                 <div class="box">
                     <?php

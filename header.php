@@ -18,8 +18,10 @@
             <a href="home.php">Home</a>
             <a href="shop.php">products</a>
             <a href="orders.php">orders</a>
+            <a href="coupon.php">coupon</a>
             <a href="about.php">about</a>
             <a href="contact.php">contacts</a>
+            <a href="rating.php">rating</a>
         </nav>
 
         <div class="icons">

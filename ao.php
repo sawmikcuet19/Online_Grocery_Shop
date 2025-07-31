@@ -8,6 +8,7 @@ if (!isset($user_id)) {
     exit();
 }
 
+// Flag to track if there's an issue with the cart
 $cart_invalid = false;
 $cart_error_message = ''; // Variable to store the error message
 
@@ -16,7 +17,6 @@ $coupon_name = '';
 $discounted_price = 0;
 $discount_error = '';
 $final_price = 0;
-$order_placed = false;  // Flag to check if the order has been placed
 
 if (isset($_POST['order']) || isset($_POST['see_discount'])) {
     // Collect and sanitize user input
@@ -28,9 +28,11 @@ if (isset($_POST['order']) || isset($_POST['see_discount'])) {
     $address = filter_var($address, FILTER_SANITIZE_STRING);
     $placed_on = date('d-M-Y');
 
+    // If coupon code is entered, sanitize and validate it
     if (!empty($_POST['coupon_name'])) {
         $coupon_name = filter_var($_POST['coupon_name'], FILTER_SANITIZE_STRING);
 
+        // Check if the coupon exists and retrieve the discount percentage
         $coupon_query = $conn->prepare("SELECT * FROM coupon_table WHERE coupon_name = ?");
         $coupon_query->execute([$coupon_name]);
 
@@ -38,12 +40,15 @@ if (isset($_POST['order']) || isset($_POST['see_discount'])) {
             $coupon = $coupon_query->fetch(PDO::FETCH_ASSOC);
             $percentage = $coupon['percentage'];
 
+            // Check if the user has chances for this coupon
             $coupon_connection_query = $conn->prepare("SELECT * FROM coupon_connection WHERE coupon_id = ? AND user_id = ?");
             $coupon_connection_query->execute([$coupon['id'], $user_id]);
 
             if ($coupon_connection_query->rowCount() > 0) {
+                // Coupon exists for this user, check chances
                 $coupon_connection = $coupon_connection_query->fetch(PDO::FETCH_ASSOC);
                 if ($coupon_connection['chances'] > 0) {
+                    // Apply discount
                     $cart_total = calculateCartTotal($user_id);
                     $discounted_price = $cart_total - ($cart_total * $percentage / 100);
                     $final_price = $discounted_price;
@@ -51,6 +56,7 @@ if (isset($_POST['order']) || isset($_POST['see_discount'])) {
                     $discount_error = 'No chances left for this coupon.';
                 }
             } else {
+                // User doesn't have a record in coupon_connection, show discounted price
                 $cart_total = calculateCartTotal($user_id);
                 $discounted_price = $cart_total - ($cart_total * $percentage / 100);
                 $final_price = $discounted_price;
@@ -60,6 +66,7 @@ if (isset($_POST['order']) || isset($_POST['see_discount'])) {
         }
     }
 
+    // If the order button was pressed, proceed with the order
     if (isset($_POST['order']) && empty($discount_error)) {
         $cart_products = [];
         $cart_total = 0;
@@ -68,65 +75,79 @@ if (isset($_POST['order']) || isset($_POST['see_discount'])) {
 
         if ($cart_query->rowCount() > 0) {
             while ($cart_item = $cart_query->fetch(PDO::FETCH_ASSOC)) {
+                // Calculate total price for each cart item
                 $cart_products[] = $cart_item['name'] . ' (' . $cart_item['quantity'] . ')';
                 $sub_total = $cart_item['price'] * $cart_item['quantity'];
                 $cart_total += $sub_total;
             }
 
+            // Use discounted price if coupon applied
             if ($discounted_price > 0) {
                 $cart_total = $discounted_price;
             }
 
             $total_product = implode(', ', $cart_products);
 
+            // Insert the order into the database
             $order_query = $conn->prepare("SELECT * FROM orders WHERE name = ? AND number = ? AND email = ? AND method = ? AND address = ? AND total_products = ? AND total_price = ?");
             $order_query->execute([$name, $number, $email, $method, $address, $total_product, $cart_total]);
 
             if ($order_query->rowCount() > 0) {
                 $message[] = 'Order is already placed!';
             } else {
+                // Start a transaction to ensure the order and stock update are handled together
                 try {
                     $conn->beginTransaction();
 
+                    // Insert the order into the orders table
                     $ps = 'pending';
                     $insert_order = $conn->prepare("INSERT INTO orders (user_id, name, number, email, method, address, total_products, total_price, placed_on, payment_status) VALUES(?,?,?,?,?,?,?,?,?,?)");
                     $insert_order->execute([$user_id, $name, $number, $email, $method, $address, $total_product, $cart_total, $placed_on, $ps]);
 
+                    // Get the order ID of the newly inserted order
                     $order_id = $conn->lastInsertId();
 
+                    // Insert into the restore table
                     $cart_query->execute([$user_id]);
                     while ($cart_item = $cart_query->fetch(PDO::FETCH_ASSOC)) {
                         $product_id = $cart_item['pid'];
                         $quantity_ordered = $cart_item['quantity'];
 
+                        // Insert into restore table
                         $insert_restore = $conn->prepare("INSERT INTO restore (oid, user_id, pid, quantity) VALUES(?, ?, ?, ?)");
                         $insert_restore->execute([$order_id, $user_id, $product_id, $quantity_ordered]);
                     }
 
+                    // Update stock for each product in the cart
                     $cart_query->execute([$user_id]);
                     while ($cart_item = $cart_query->fetch(PDO::FETCH_ASSOC)) {
                         $product_id = $cart_item['pid'];
                         $quantity_ordered = $cart_item['quantity'];
 
+                        // Update the stock in the products table
                         $update_stock = $conn->prepare("UPDATE products SET stock = stock - ? WHERE id = ?");
                         $update_stock->execute([$quantity_ordered, $product_id]);
                     }
 
+                    // Insert into the payments table if the payment method is Credit/Debit card
                     if ($method == 'credit card' || $method == 'Debit card') {
                         $card = filter_var($_POST['card'], FILTER_SANITIZE_STRING);
-                        $pin = filter_var($_POST['pass'], FILTER_SANITIZE_STRING);
-                        $pin = md5($pin);  // Hash the PIN
+                        $pin = md5($_POST['pass']);
+                        $pin = filter_var($pass, FILTER_SANITIZE_STRING);
 
                         $insert_payment = $conn->prepare("INSERT INTO payments (oid, card_type, card, pin, date) VALUES (?, ?, ?, ?, ?)");
                         $insert_payment->execute([$order_id, $method, $card, $pin, $placed_on]);
                     }
 
+                    // Remove items from the cart after the order is placed
                     $delete_cart = $conn->prepare("DELETE FROM cart WHERE user_id = ?");
                     $delete_cart->execute([$user_id]);
 
+                    // Commit the transaction
                     $conn->commit();
-                    $order_placed = true;  // Set the order placed flag
+                    $message[] = 'Order placed successfully!';
                 } catch (Exception $e) {
+                    // If something goes wrong, rollback the transaction
                     $conn->rollBack();
                     $message[] = 'Failed to place the order. Please try again later.';
                 }
@@ -165,30 +186,23 @@ function calculateCartTotal($user_id) {
 
     <section class="display-orders">
         <?php
-            // Show only the total price if the order has been placed successfully
-            if ($order_placed) {
-                echo '<p>Your order has been placed successfully!</p>';
-                echo '<p>Total Price: ' . $final_price . '/-</p>';
-            } else {
-                // Show the order details and form for placing the order
-                $cart_grand_total = calculateCartTotal($user_id);
+            $cart_grand_total = calculateCartTotal($user_id);
 
-                echo '<p>Total Price: ' . $cart_grand_total . '/-</p>';
+            // Show the discounted price if available
+            echo '<p>Total Price: ' . $cart_grand_total . '/-</p>';
 
-                if ($discounted_price > 0) {
-                    echo '<p>Discounted Price: ' . $discounted_price . '/-</p>';
-                }
+            if ($discounted_price > 0) {
+                echo '<p>Discounted Price: ' . $discounted_price . '/-</p>';
+            }
 
-                if ($discount_error) {
-                    echo '<p class="error">' . $discount_error . '</p>';
-                }
+            // Display the discount error message if there is one
+            if ($discount_error) {
+                echo '<p class="error">' . $discount_error . '</p>';
             }
         ?>
     </section>
 
     <section class="checkout-orders">
-        <!-- Only show the form if the order has not been placed -->
-        <?php if (!$order_placed): ?>
         <form action="" method="POST" id="orderForm">
             <h3>Place your order</h3>
             <div class="flex">
@@ -246,7 +260,7 @@ function calculateCartTotal($user_id) {
                     <input type="text" name="card" placeholder="Enter card number" class="box">
                 </div>
                 <div class="inputBox" id="card-details" style="display: none;">
-                    <span>Card PIN:</span>
+                    <span>Card Pin:</span>
                     <input type="password" name="pass" placeholder="Enter card pin" class="box">
                 </div>
 
@@ -254,20 +268,15 @@ function calculateCartTotal($user_id) {
                 <input type="submit" name="order" value="Place Order" class="btn">
             </div>
         </form>
-        <?php endif; ?>
     </section>
 
     <script>
         function togglePaymentFields(paymentMethod) {
-            const cardDetails = document.querySelectorAll('#card-details');
+            const cardDetails = document.getElementById('card-details');
             if (paymentMethod.value === 'credit card' || paymentMethod.value === 'Debit card') {
-                cardDetails.forEach(function(field) {
-                    field.style.display = 'block';
-                });
+                cardDetails.style.display = 'block';
             } else {
-                cardDetails.forEach(function(field) {
-                    field.style.display = 'none';
-                });
+                cardDetails.style.display = 'none';
             }
         }
     </script>
